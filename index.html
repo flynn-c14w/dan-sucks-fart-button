@@ -76,14 +76,22 @@
 
     <script>
       const button = document.getElementById("fart-button");
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      const audioContext = new AudioContext();
+      const WebAudioContext = window.AudioContext || window.webkitAudioContext;
+      let audioContext = null;
+
+      function getAudioContext() {
+        if (!audioContext) {
+          audioContext = new WebAudioContext();
+        }
+        return audioContext;
+      }
 
       function createNoiseBuffer() {
         const durationSeconds = 2;
-        const sampleRate = audioContext.sampleRate;
+        const ctx = getAudioContext();
+        const sampleRate = ctx.sampleRate;
         const frameCount = sampleRate * durationSeconds;
-        const buffer = audioContext.createBuffer(1, frameCount, sampleRate);
+        const buffer = ctx.createBuffer(1, frameCount, sampleRate);
         const data = buffer.getChannelData(0);
 
         for (let i = 0; i < frameCount; i += 1) {
@@ -95,44 +103,44 @@
       }
 
       function shapeFartLikeSound(startTime) {
+        const ctx = getAudioContext();
         const duration = 1.5;
-        const noiseBufferSource = audioContext.createBufferSource();
+        const noiseBufferSource = ctx.createBufferSource();
         noiseBufferSource.buffer = createNoiseBuffer();
 
-        const filter = audioContext.createBiquadFilter();
+        const filter = ctx.createBiquadFilter();
         filter.type = "bandpass";
         filter.frequency.setValueAtTime(380, startTime);
         filter.Q.setValueAtTime(2.1, startTime);
 
-        const noiseGain = audioContext.createGain();
+        const noiseGain = ctx.createGain();
         noiseGain.gain.setValueAtTime(0.001, startTime);
         noiseGain.gain.exponentialRampToValueAtTime(0.35, startTime + 0.05);
         noiseGain.gain.exponentialRampToValueAtTime(0.06, startTime + duration * 0.8);
         noiseGain.gain.exponentialRampToValueAtTime(0.001, startTime + duration + 0.1);
 
-        const tone = audioContext.createOscillator();
+        const tone = ctx.createOscillator();
         tone.type = "triangle";
         tone.frequency.setValueAtTime(120, startTime);
         tone.frequency.exponentialRampToValueAtTime(90, startTime + duration);
 
-        const toneGain = audioContext.createGain();
+        const toneGain = ctx.createGain();
         toneGain.gain.setValueAtTime(0.001, startTime);
         toneGain.gain.exponentialRampToValueAtTime(0.18, startTime + 0.05);
         toneGain.gain.exponentialRampToValueAtTime(0.001, startTime + duration + 0.2);
 
-        const outputGain = audioContext.createGain();
+        const outputGain = ctx.createGain();
         outputGain.gain.value = 0.95;
 
         noiseBufferSource.connect(filter).connect(noiseGain).connect(outputGain);
         tone.connect(toneGain).connect(outputGain);
-        outputGain.connect(audioContext.destination);
+        outputGain.connect(ctx.destination);
 
         noiseBufferSource.start(startTime);
         tone.start(startTime);
         noiseBufferSource.stop(startTime + duration + 0.2);
         tone.stop(startTime + duration + 0.2);
 
-        const stopTime = startTime + duration + 0.4;
         noiseBufferSource.onended = () => {
           outputGain.disconnect();
           filter.disconnect();
@@ -142,14 +150,14 @@
           noiseBufferSource.disconnect();
           tone.disconnect();
         };
-        return stopTime;
       }
 
       button.addEventListener("click", async () => {
-        if (audioContext.state === "suspended") {
-          await audioContext.resume();
+        const ctx = getAudioContext();
+        if (ctx.state === "suspended") {
+          await ctx.resume();
         }
-        shapeFartLikeSound(audioContext.currentTime);
+        shapeFartLikeSound(ctx.currentTime);
       });
     </script>
   </body>
