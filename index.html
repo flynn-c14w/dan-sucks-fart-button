@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dan Sucks Fart Button</title>
+    <style>
+      :root {
+        --bg: #f6f1d8;
+        --panel: #ffffff;
+        --accent: #2f855a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        font-family: "Trebuchet MS", "Comic Sans MS", "Arial", sans-serif;
+        background: radial-gradient(circle at top, #ffe7a8 0%, var(--bg) 50%, #e8d7a8 100%);
+        color: #1f2937;
+      }
+
+      .card {
+        width: min(720px, 92vw);
+        text-align: center;
+        background: var(--panel);
+        border-radius: 14px;
+        padding: 2rem;
+        border: 3px solid #2c2c2c;
+        box-shadow: 10px 10px 0 #d0c08f;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 8vw, 4rem);
+        letter-spacing: 0.02em;
+      }
+
+      p {
+        margin: 1rem 0 1.5rem;
+        color: #444;
+      }
+
+      button {
+        border: none;
+        border-radius: 999px;
+        padding: 0.9rem 1.5rem;
+        font-size: 1.1rem;
+        font-weight: 700;
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+        transition: transform 0.12s ease;
+      }
+
+      button:hover {
+        transform: scale(1.03);
+      }
+
+      button:active {
+        transform: scale(0.98);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <h1>Dan sucks!</h1>
+      <p>Click the button for a local fart-style blast.</p>
+      <button id="fart-button" type="button">Play Fart</button>
+    </main>
+
+    <script>
+      const button = document.getElementById("fart-button");
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      const audioContext = new AudioContext();
+
+      function createNoiseBuffer() {
+        const durationSeconds = 2;
+        const sampleRate = audioContext.sampleRate;
+        const frameCount = sampleRate * durationSeconds;
+        const buffer = audioContext.createBuffer(1, frameCount, sampleRate);
+        const data = buffer.getChannelData(0);
+
+        for (let i = 0; i < frameCount; i += 1) {
+          const value = Math.random() * 2 - 1;
+          data[i] = value * 0.7;
+        }
+
+        return buffer;
+      }
+
+      function shapeFartLikeSound(startTime) {
+        const duration = 1.5;
+        const noiseBufferSource = audioContext.createBufferSource();
+        noiseBufferSource.buffer = createNoiseBuffer();
+
+        const filter = audioContext.createBiquadFilter();
+        filter.type = "bandpass";
+        filter.frequency.setValueAtTime(380, startTime);
+        filter.Q.setValueAtTime(2.1, startTime);
+
+        const noiseGain = audioContext.createGain();
+        noiseGain.gain.setValueAtTime(0.001, startTime);
+        noiseGain.gain.exponentialRampToValueAtTime(0.35, startTime + 0.05);
+        noiseGain.gain.exponentialRampToValueAtTime(0.06, startTime + duration * 0.8);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, startTime + duration + 0.1);
+
+        const tone = audioContext.createOscillator();
+        tone.type = "triangle";
+        tone.frequency.setValueAtTime(120, startTime);
+        tone.frequency.exponentialRampToValueAtTime(90, startTime + duration);
+
+        const toneGain = audioContext.createGain();
+        toneGain.gain.setValueAtTime(0.001, startTime);
+        toneGain.gain.exponentialRampToValueAtTime(0.18, startTime + 0.05);
+        toneGain.gain.exponentialRampToValueAtTime(0.001, startTime + duration + 0.2);
+
+        const outputGain = audioContext.createGain();
+        outputGain.gain.value = 0.95;
+
+        noiseBufferSource.connect(filter).connect(noiseGain).connect(outputGain);
+        tone.connect(toneGain).connect(outputGain);
+        outputGain.connect(audioContext.destination);
+
+        noiseBufferSource.start(startTime);
+        tone.start(startTime);
+        noiseBufferSource.stop(startTime + duration + 0.2);
+        tone.stop(startTime + duration + 0.2);
+
+        const stopTime = startTime + duration + 0.4;
+        noiseBufferSource.onended = () => {
+          outputGain.disconnect();
+          filter.disconnect();
+          noiseGain.disconnect();
+          tone.disconnect();
+          toneGain.disconnect();
+          noiseBufferSource.disconnect();
+          tone.disconnect();
+        };
+        return stopTime;
+      }
+
+      button.addEventListener("click", async () => {
+        if (audioContext.state === "suspended") {
+          await audioContext.resume();
+        }
+        shapeFartLikeSound(audioContext.currentTime);
+      });
+    </script>
+  </body>
+</html>
