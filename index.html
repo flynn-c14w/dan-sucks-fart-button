@@ -80,84 +80,98 @@
       let audioContext = null;
 
       function getAudioContext() {
+        if (!WebAudioContext) {
+          return null;
+        }
         if (!audioContext) {
           audioContext = new WebAudioContext();
         }
         return audioContext;
       }
 
-      function createNoiseBuffer() {
-        const durationSeconds = 2;
-        const ctx = getAudioContext();
-        const sampleRate = ctx.sampleRate;
-        const frameCount = sampleRate * durationSeconds;
-        const buffer = ctx.createBuffer(1, frameCount, sampleRate);
-        const data = buffer.getChannelData(0);
+      function createFartNoiseBuffer(ctx, durationSeconds) {
+        const frameCount = Math.floor(ctx.sampleRate * durationSeconds);
+        const buffer = ctx.createBuffer(1, frameCount, ctx.sampleRate);
+        const channel = buffer.getChannelData(0);
 
         for (let i = 0; i < frameCount; i += 1) {
-          const value = Math.random() * 2 - 1;
-          data[i] = value * 0.7;
+          const fade = 1 - i / frameCount;
+          channel[i] = (Math.random() * 2 - 1) * 0.8 * fade;
         }
 
         return buffer;
       }
 
-      function shapeFartLikeSound(startTime) {
-        const ctx = getAudioContext();
-        const duration = 1.5;
-        const noiseBufferSource = ctx.createBufferSource();
-        noiseBufferSource.buffer = createNoiseBuffer();
+      function playFartSound(ctx) {
+        const now = ctx.currentTime;
+        const burstDuration = 1.25;
 
-        const filter = ctx.createBiquadFilter();
-        filter.type = "bandpass";
-        filter.frequency.setValueAtTime(380, startTime);
-        filter.Q.setValueAtTime(2.1, startTime);
+        const noise = ctx.createBufferSource();
+        noise.buffer = createFartNoiseBuffer(ctx, 2);
+        const noiseFilter = ctx.createBiquadFilter();
+        noiseFilter.type = "bandpass";
+        noiseFilter.frequency.setValueAtTime(420, now);
+        noiseFilter.frequency.exponentialRampToValueAtTime(120, now + burstDuration);
+        noiseFilter.Q.setValueAtTime(1.8, now);
 
         const noiseGain = ctx.createGain();
-        noiseGain.gain.setValueAtTime(0.001, startTime);
-        noiseGain.gain.exponentialRampToValueAtTime(0.35, startTime + 0.05);
-        noiseGain.gain.exponentialRampToValueAtTime(0.06, startTime + duration * 0.8);
-        noiseGain.gain.exponentialRampToValueAtTime(0.001, startTime + duration + 0.1);
+        noiseGain.gain.setValueAtTime(0.001, now);
+        noiseGain.gain.exponentialRampToValueAtTime(0.45, now + 0.05);
+        noiseGain.gain.exponentialRampToValueAtTime(0.04, now + burstDuration);
+        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + burstDuration + 0.2);
 
         const tone = ctx.createOscillator();
         tone.type = "triangle";
-        tone.frequency.setValueAtTime(120, startTime);
-        tone.frequency.exponentialRampToValueAtTime(90, startTime + duration);
+        tone.frequency.setValueAtTime(160, now);
+        tone.frequency.exponentialRampToValueAtTime(95, now + burstDuration);
 
         const toneGain = ctx.createGain();
-        toneGain.gain.setValueAtTime(0.001, startTime);
-        toneGain.gain.exponentialRampToValueAtTime(0.18, startTime + 0.05);
-        toneGain.gain.exponentialRampToValueAtTime(0.001, startTime + duration + 0.2);
+        toneGain.gain.setValueAtTime(0.001, now);
+        toneGain.gain.exponentialRampToValueAtTime(0.28, now + 0.07);
+        toneGain.gain.exponentialRampToValueAtTime(0.001, now + burstDuration + 0.2);
 
-        const outputGain = ctx.createGain();
-        outputGain.gain.value = 0.95;
+        const masterGain = ctx.createGain();
+        masterGain.gain.value = 0.9;
 
-        noiseBufferSource.connect(filter).connect(noiseGain).connect(outputGain);
-        tone.connect(toneGain).connect(outputGain);
-        outputGain.connect(ctx.destination);
+        noise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(masterGain);
+        tone.connect(toneGain);
+        toneGain.connect(masterGain);
+        masterGain.connect(ctx.destination);
 
-        noiseBufferSource.start(startTime);
-        tone.start(startTime);
-        noiseBufferSource.stop(startTime + duration + 0.2);
-        tone.stop(startTime + duration + 0.2);
+        noise.start(now);
+        tone.start(now);
+        const stopAt = now + burstDuration + 0.25;
+        noise.stop(stopAt);
+        tone.stop(stopAt);
 
-        noiseBufferSource.onended = () => {
-          outputGain.disconnect();
-          filter.disconnect();
-          noiseGain.disconnect();
-          tone.disconnect();
+        let cleaned = false;
+        const cleanupNodes = () => {
+          if (cleaned) return;
+          cleaned = true;
+          masterGain.disconnect();
           toneGain.disconnect();
-          noiseBufferSource.disconnect();
           tone.disconnect();
+          noiseGain.disconnect();
+          noiseFilter.disconnect();
+          noise.disconnect();
         };
+
+        noise.onended = cleanupNodes;
+        tone.onended = cleanupNodes;
       }
 
       button.addEventListener("click", async () => {
         const ctx = getAudioContext();
+        if (!ctx) {
+          return;
+        }
+
         if (ctx.state === "suspended") {
           await ctx.resume();
         }
-        shapeFartLikeSound(ctx.currentTime);
+        playFartSound(ctx);
       });
     </script>
   </body>
