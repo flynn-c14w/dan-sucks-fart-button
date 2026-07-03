@@ -93,73 +93,147 @@
         const frameCount = Math.floor(ctx.sampleRate * durationSeconds);
         const buffer = ctx.createBuffer(1, frameCount, ctx.sampleRate);
         const channel = buffer.getChannelData(0);
+        let wobble = 0;
 
         for (let i = 0; i < frameCount; i += 1) {
-          const fade = 1 - i / frameCount;
-          channel[i] = (Math.random() * 2 - 1) * 0.8 * fade;
+          const progress = i / frameCount;
+          const decay = Math.pow(1 - progress, 1.8);
+          const sputter = Math.sin(progress * Math.PI * 38) > 0.22 ? 1 : 0.38;
+          wobble = wobble * 0.82 + (Math.random() * 2 - 1) * 0.18;
+          channel[i] = (Math.random() * 2 - 1 + wobble) * 0.95 * decay * sputter;
         }
 
         return buffer;
       }
 
+      function makeSaturationCurve(amount = 28) {
+        const samples = 1024;
+        const curve = new Float32Array(samples);
+        for (let i = 0; i < samples; i += 1) {
+          const x = (i * 2) / samples - 1;
+          curve[i] = ((3 + amount) * x * 20 * (Math.PI / 180)) / (Math.PI + amount * Math.abs(x));
+        }
+        return curve;
+      }
+
+      function scheduleBubble(ctx, destination, startTime, pitch, duration, gainValue) {
+        const bubble = ctx.createOscillator();
+        const bubbleGain = ctx.createGain();
+        bubble.type = "sawtooth";
+        bubble.frequency.setValueAtTime(pitch, startTime);
+        bubble.frequency.exponentialRampToValueAtTime(Math.max(35, pitch * 0.42), startTime + duration);
+        bubbleGain.gain.setValueAtTime(0.001, startTime);
+        bubbleGain.gain.exponentialRampToValueAtTime(gainValue, startTime + 0.025);
+        bubbleGain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+        bubble.connect(bubbleGain).connect(destination);
+        bubble.start(startTime);
+        bubble.stop(startTime + duration + 0.03);
+        bubble.onended = () => {
+          bubble.disconnect();
+          bubbleGain.disconnect();
+        };
+      }
+
       function playFartSound(ctx) {
         const now = ctx.currentTime;
-        const burstDuration = 1.25;
+        const burstDuration = 1.9;
+
+        const wetBus = ctx.createGain();
+        wetBus.gain.value = 0.95;
+
+        const squelch = ctx.createWaveShaper();
+        squelch.curve = makeSaturationCurve(34);
+        squelch.oversample = "4x";
+
+        const wetLowpass = ctx.createBiquadFilter();
+        wetLowpass.type = "lowpass";
+        wetLowpass.frequency.setValueAtTime(720, now);
+        wetLowpass.frequency.exponentialRampToValueAtTime(165, now + burstDuration);
+        wetLowpass.Q.setValueAtTime(5.2, now);
+
+        const wetCompressor = ctx.createDynamicsCompressor();
+        wetCompressor.threshold.setValueAtTime(-22, now);
+        wetCompressor.knee.setValueAtTime(24, now);
+        wetCompressor.ratio.setValueAtTime(7, now);
+        wetCompressor.attack.setValueAtTime(0.004, now);
+        wetCompressor.release.setValueAtTime(0.24, now);
+
+        const masterGain = ctx.createGain();
+        masterGain.gain.setValueAtTime(0.001, now);
+        masterGain.gain.exponentialRampToValueAtTime(0.96, now + 0.04);
+        masterGain.gain.exponentialRampToValueAtTime(0.001, now + burstDuration + 0.35);
+
+        wetBus.connect(squelch).connect(wetLowpass).connect(wetCompressor).connect(masterGain).connect(ctx.destination);
 
         const noise = ctx.createBufferSource();
-        noise.buffer = createFartNoiseBuffer(ctx, 2);
+        noise.buffer = createFartNoiseBuffer(ctx, 2.4);
         const noiseFilter = ctx.createBiquadFilter();
         noiseFilter.type = "bandpass";
-        noiseFilter.frequency.setValueAtTime(420, now);
-        noiseFilter.frequency.exponentialRampToValueAtTime(120, now + burstDuration);
-        noiseFilter.Q.setValueAtTime(1.8, now);
+        noiseFilter.frequency.setValueAtTime(520, now);
+        noiseFilter.frequency.exponentialRampToValueAtTime(115, now + burstDuration);
+        noiseFilter.Q.setValueAtTime(2.9, now);
 
         const noiseGain = ctx.createGain();
         noiseGain.gain.setValueAtTime(0.001, now);
-        noiseGain.gain.exponentialRampToValueAtTime(0.45, now + 0.05);
-        noiseGain.gain.exponentialRampToValueAtTime(0.04, now + burstDuration);
-        noiseGain.gain.exponentialRampToValueAtTime(0.001, now + burstDuration + 0.2);
+        noiseGain.gain.exponentialRampToValueAtTime(0.62, now + 0.045);
+        noiseGain.gain.setValueAtTime(0.5, now + 0.32);
+        noiseGain.gain.exponentialRampToValueAtTime(0.05, now + burstDuration + 0.12);
 
-        const tone = ctx.createOscillator();
-        tone.type = "triangle";
-        tone.frequency.setValueAtTime(160, now);
-        tone.frequency.exponentialRampToValueAtTime(95, now + burstDuration);
+        const rumble = ctx.createOscillator();
+        rumble.type = "sawtooth";
+        rumble.frequency.setValueAtTime(115, now);
+        rumble.frequency.exponentialRampToValueAtTime(52, now + burstDuration + 0.15);
 
-        const toneGain = ctx.createGain();
-        toneGain.gain.setValueAtTime(0.001, now);
-        toneGain.gain.exponentialRampToValueAtTime(0.28, now + 0.07);
-        toneGain.gain.exponentialRampToValueAtTime(0.001, now + burstDuration + 0.2);
+        const rumbleGain = ctx.createGain();
+        rumbleGain.gain.setValueAtTime(0.001, now);
+        rumbleGain.gain.exponentialRampToValueAtTime(0.36, now + 0.08);
+        rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + burstDuration + 0.28);
 
-        const masterGain = ctx.createGain();
-        masterGain.gain.value = 0.9;
+        const throat = ctx.createOscillator();
+        throat.type = "triangle";
+        throat.frequency.setValueAtTime(82, now);
+        throat.frequency.exponentialRampToValueAtTime(45, now + burstDuration);
 
-        noise.connect(noiseFilter);
-        noiseFilter.connect(noiseGain);
-        noiseGain.connect(masterGain);
-        tone.connect(toneGain);
-        toneGain.connect(masterGain);
-        masterGain.connect(ctx.destination);
+        const throatGain = ctx.createGain();
+        throatGain.gain.setValueAtTime(0.001, now);
+        throatGain.gain.exponentialRampToValueAtTime(0.23, now + 0.12);
+        throatGain.gain.exponentialRampToValueAtTime(0.001, now + burstDuration + 0.18);
+
+        noise.connect(noiseFilter).connect(noiseGain).connect(wetBus);
+        rumble.connect(rumbleGain).connect(wetBus);
+        throat.connect(throatGain).connect(wetBus);
+
+        [0.16, 0.34, 0.58, 0.82, 1.12, 1.42].forEach((offset, index) => {
+          scheduleBubble(ctx, wetBus, now + offset, 175 - index * 16, 0.16 + index * 0.018, 0.11 - index * 0.009);
+        });
 
         noise.start(now);
-        tone.start(now);
-        const stopAt = now + burstDuration + 0.25;
+        rumble.start(now);
+        throat.start(now + 0.03);
+        const stopAt = now + burstDuration + 0.35;
         noise.stop(stopAt);
-        tone.stop(stopAt);
+        rumble.stop(stopAt);
+        throat.stop(stopAt);
 
         let cleaned = false;
         const cleanupNodes = () => {
           if (cleaned) return;
           cleaned = true;
+          wetBus.disconnect();
+          squelch.disconnect();
+          wetLowpass.disconnect();
+          wetCompressor.disconnect();
           masterGain.disconnect();
-          toneGain.disconnect();
-          tone.disconnect();
           noiseGain.disconnect();
           noiseFilter.disconnect();
           noise.disconnect();
+          rumbleGain.disconnect();
+          rumble.disconnect();
+          throatGain.disconnect();
+          throat.disconnect();
         };
 
         noise.onended = cleanupNodes;
-        tone.onended = cleanupNodes;
       }
 
       button.addEventListener("click", async () => {
